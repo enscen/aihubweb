@@ -1,0 +1,205 @@
+import { GoogleGenAI } from '@google/genai';
+import OpenAI from 'openai';
+import { Attachment, ChatMessage, AIModelId } from './types';
+
+export interface ChatRequestOptions {
+  messages: ChatMessage[];
+  model: AIModelId;
+  geminiApiKey?: string;
+  openaiApiKey?: string;
+}
+
+/**
+ * Prepares user message content with all attachments (images, PDFs, text, tables)
+ */
+function buildUserContentParts(message: ChatMessage) {
+  const parts: Array<{
+    type: 'text' | 'image' | 'file';
+    text?: string;
+    mimeType?: string;
+    data?: string;
+    name?: string;
+  }> = [];
+
+  // 1. Process attachments
+  if (message.attachments && message.attachments.length > 0) {
+    for (const att of message.attachments) {
+      // Images or PDF with base64
+      if (att.data && (att.mimeType.startsWith('image/') || att.mimeType === 'application/pdf')) {
+        parts.push({
+          type: 'file',
+          name: att.name,
+          mimeType: att.mimeType,
+          data: att.data,
+        });
+      }
+
+      // Extracted text (Excel, Word, Text, Clipboard table/text)
+      if (att.extractedText) {
+        let label = 'TỆP ĐÍNH KÈM';
+        if (att.type === 'clipboard-table') label = 'BẢNG DỮ LIỆU EXCEL TỪ CLIPBOARD';
+        if (att.type === 'clipboard-text') label = 'VĂN BẢN TỪ CLIPBOARD';
+        if (att.type === 'onedrive') label = 'TỆP TẢI VỀ TỪ ONEDRIVE';
+
+        parts.push({
+          type: 'text',
+          text: `\n\n=== [${label}: ${att.name}] ===\n${att.extractedText}\n=== [HẾT TỆP: ${att.name}] ===\n\n`,
+        });
+      }
+    }
+  }
+
+  // 2. Add the actual user text prompt
+  parts.push({
+    type: 'text',
+    text: message.content || 'Hãy phân tích và tóm tắt thông tin từ các tệp/dữ liệu đính kèm trên.',
+  });
+
+  return parts;
+}
+
+/**
+ * Stream responses from Gemini (via @google/genai)
+ */
+export async function* streamGemini(
+  messages: ChatMessage[],
+  modelId: string,
+  apiKey: string
+): AsyncGenerator<string, void, unknown> {
+  const ai = new GoogleGenAI({ apiKey });
+
+  // Map to Gemini contents format
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const contents: any[] = [];
+
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    const isUser = msg.role === 'user';
+    const role = isUser ? 'user' : 'model';
+
+    if (isUser) {
+      const partsObj = buildUserContentParts(msg);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const parts: any[] = [];
+
+      for (const p of partsObj) {
+        if (p.type === 'file' && p.data && p.mimeType) {
+          parts.push({
+            inlineData: {
+              mimeType: p.mimeType,
+              data: p.data,
+            },
+          });
+        } else if (p.type === 'text' && p.text) {
+          parts.push({
+            text: p.text,
+          });
+        }
+      }
+
+      contents.push({ role, parts });
+    } else {
+      contents.push({
+        role,
+        parts: [{ text: msg.content }],
+      });
+    }
+  }
+
+  // Model name mapping
+  let actualModel = modelId;
+  if (modelId === 'gemini-2.0-flash') {
+    actualModel = 'gemini-2.0-flash';
+  } else if (modelId === 'gemini-1.5-pro') {
+    actualModel = 'gemini-1.5-pro';
+  }
+
+  const responseStream = await ai.models.generateContentStream({
+    model: actualModel,
+    contents,
+    config: {
+      systemInstruction: {
+        parts: [
+          {
+            text: 'Bạn là trợ lý AI thông minh, hỗ trợ xử lý, phân tích, trích xuất và tổng hợp tài liệu (Excel, PDF, Word, Ảnh chụp hóa đơn/bảng biểu, văn bản). Trả lời bằng tiếng Việt rõ ràng, logic, có định dạng Markdown đẹp mắt, trình bày bảng biểu trực quan khi cần thiết.',
+          },
+        ],
+      },
+    },
+  });
+
+  for await (const chunk of responseStream) {
+    if (chunk.text) {
+      yield chunk.text;
+    }
+  }
+}
+
+/**
+ * Stream responses from OpenAI (via openai)
+ */
+export async function* streamOpenAI(
+  messages: ChatMessage[],
+  modelId: string,
+  apiKey: string
+): AsyncGenerator<string, void, unknown> {
+  const client = new OpenAI({ apiKey });
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const formattedMessages: any[] = [
+    {
+      role: 'system',
+      content:
+        'Bạn là trợ lý AI thông minh, hỗ trợ phân tích, trích xuất và tổng hợp tài liệu (Excel, PDF, Word, Ảnh chụp, dữ liệu clipboard). Trả lời bằng tiếng Việt chuyên nghiệp, định dạng Markdown rõ ràng.',
+    },
+  ];
+
+  for (const msg of messages) {
+    if (msg.role === 'assistant') {
+      formattedMessages.push({
+        role: 'assistant',
+        content: msg.content,
+      });
+    } else {
+      const partsObj = buildUserContentParts(msg);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const contentParts: any[] = [];
+
+      for (const p of partsObj) {
+        if (p.type === 'file' && p.data && p.mimeType && p.mimeType.startsWith('image/')) {
+          contentParts.push({
+            type: 'image_url',
+            image_url: {
+              url: `data:${p.mimeType};base64,${p.data}`,
+            },
+          });
+        } else if (p.text) {
+          contentParts.push({
+            type: 'text',
+            text: p.text,
+          });
+        }
+      }
+
+      formattedMessages.push({
+        role: 'user',
+        content: contentParts.length === 1 && contentParts[0].type === 'text' 
+          ? contentParts[0].text 
+          : contentParts,
+      });
+    }
+  }
+
+  const stream = await client.chat.completions.create({
+    model: modelId,
+    messages: formattedMessages,
+    stream: true,
+  });
+
+  for await (const chunk of stream) {
+    const text = chunk.choices[0]?.delta?.content;
+    if (text) {
+      yield text;
+    }
+  }
+}
