@@ -7,6 +7,7 @@ export interface ChatRequestOptions {
   model: AIModelId;
   geminiApiKey?: string;
   openaiApiKey?: string;
+  groqApiKey?: string;
 }
 
 /**
@@ -24,7 +25,6 @@ function buildUserContentParts(message: ChatMessage) {
   // 1. Process attachments
   if (message.attachments && message.attachments.length > 0) {
     for (const att of message.attachments) {
-      // Images or PDF with base64
       if (att.data && (att.mimeType.startsWith('image/') || att.mimeType === 'application/pdf')) {
         parts.push({
           type: 'file',
@@ -34,7 +34,6 @@ function buildUserContentParts(message: ChatMessage) {
         });
       }
 
-      // Extracted text (Excel, Word, Text, Clipboard table/text)
       if (att.extractedText) {
         let label = 'TỆP ĐÍNH KÈM';
         if (att.type === 'clipboard-table') label = 'BẢNG DỮ LIỆU EXCEL TỪ CLIPBOARD';
@@ -49,13 +48,72 @@ function buildUserContentParts(message: ChatMessage) {
     }
   }
 
-  // 2. Add the actual user text prompt
+  // 2. Add user text prompt
   parts.push({
     type: 'text',
     text: message.content || 'Hãy phân tích và tóm tắt thông tin từ các tệp/dữ liệu đính kèm trên.',
   });
 
   return parts;
+}
+
+/**
+ * Stream responses from Groq (100% Free via Llama 3.3 70B)
+ */
+export async function* streamGroq(
+  messages: ChatMessage[],
+  modelId: string,
+  apiKey: string
+): AsyncGenerator<string, void, unknown> {
+  const client = new OpenAI({
+    apiKey,
+    baseURL: 'https://api.groq.com/openai/v1',
+  });
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const formattedMessages: any[] = [
+    {
+      role: 'system',
+      content:
+        'Bạn là DocAI Agent - trợ lý văn phòng thông minh. Khi người dùng cung cấp bảng tính hoặc dữ liệu, hãy phân tích kỹ lưỡng và luôn trình bày kết quả thành BẢNG MARKDOWN chuẩn (để người dùng có thể bấm nút Xuất Excel tải về). Trả lời bằng tiếng Việt rõ ràng, logic.',
+    },
+  ];
+
+  for (const msg of messages) {
+    if (msg.role === 'assistant') {
+      formattedMessages.push({
+        role: 'assistant',
+        content: msg.content,
+      });
+    } else {
+      const partsObj = buildUserContentParts(msg);
+      let textContent = '';
+
+      for (const p of partsObj) {
+        if (p.text) {
+          textContent += p.text + '\n';
+        }
+      }
+
+      formattedMessages.push({
+        role: 'user',
+        content: textContent.trim(),
+      });
+    }
+  }
+
+  const stream = await client.chat.completions.create({
+    model: modelId || 'llama-3.3-70b-versatile',
+    messages: formattedMessages,
+    stream: true,
+  });
+
+  for await (const chunk of stream) {
+    const text = chunk.choices[0]?.delta?.content;
+    if (text) {
+      yield text;
+    }
+  }
 }
 
 /**
@@ -68,7 +126,6 @@ export async function* streamGemini(
 ): AsyncGenerator<string, void, unknown> {
   const ai = new GoogleGenAI({ apiKey });
 
-  // Map to Gemini contents format
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const contents: any[] = [];
 
@@ -106,7 +163,6 @@ export async function* streamGemini(
     }
   }
 
-  // Model name mapping
   let actualModel = modelId;
   if (modelId === 'gemini-2.0-flash') {
     actualModel = 'gemini-2.0-flash';
@@ -155,7 +211,7 @@ export async function* streamOpenAI(
     {
       role: 'system',
       content:
-        'Bạn là trợ lý AI thông minh, hỗ trợ phân tích, trích xuất và tổng hợp tài liệu (Excel, PDF, Word, Ảnh chụp, dữ liệu clipboard). Trả lời bằng tiếng Việt chuyên nghiệp, định dạng Markdown rõ ràng.',
+        'Bạn là DocAI Agent - trợ lý văn phòng thông minh. Khi người dùng cung cấp bảng tính hoặc dữ liệu, hãy phân tích kỹ lưỡng và luôn trình bày kết quả thành BẢNG MARKDOWN chuẩn (để người dùng có thể bấm nút Xuất Excel tải về). Trả lời bằng tiếng Việt chuyên nghiệp.',
     },
   ];
 

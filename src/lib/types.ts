@@ -11,10 +11,10 @@ export interface Attachment {
   type: AttachmentType;
   mimeType: string;
   size?: number;
-  data?: string; // base64 representation if image/pdf
-  extractedText?: string; // extracted text content for docs/excel/txt
-  originalUrl?: string; // for onedrive links
-  previewUrl?: string; // object URL or data URL for UI preview
+  data?: string;
+  extractedText?: string;
+  originalUrl?: string;
+  previewUrl?: string;
 }
 
 export interface ChatMessage {
@@ -26,6 +26,7 @@ export interface ChatMessage {
 }
 
 export type AIModelId = 
+  | 'llama-3.3-70b-versatile'
   | 'gemini-2.0-flash' 
   | 'gemini-1.5-pro' 
   | 'gpt-4o' 
@@ -34,38 +35,45 @@ export type AIModelId =
 export interface AIModelOption {
   id: AIModelId;
   name: string;
-  provider: 'gemini' | 'openai';
+  provider: 'gemini' | 'openai' | 'groq';
   badge: string;
   description: string;
 }
 
 export const AVAILABLE_MODELS: AIModelOption[] = [
   {
+    id: 'llama-3.3-70b-versatile',
+    name: 'Llama 3.3 70B (Groq)',
+    provider: 'groq',
+    badge: '★ 100% Free - Không cần nạp tiền',
+    description: 'Không cần thẻ tín dụng, lấy key trong 10 giây, cực kỳ thông minh và phân tích văn bản/bảng biểu siêu tốc.',
+  },
+  {
     id: 'gemini-2.0-flash',
     name: 'Gemini 2.0 Flash',
     provider: 'gemini',
-    badge: 'Khuyên dùng - Cực nhanh & Context 1M',
-    description: 'Tốc độ cực nhanh, xử lý tài liệu lớn, PDF, Excel xuất sắc và miễn phí cao.',
+    badge: 'Google AI (Context 1M)',
+    description: 'Tốc độ cực nhanh, xử lý tài liệu lớn, PDF, Excel xuất sắc.',
   },
   {
     id: 'gemini-1.5-pro',
     name: 'Gemini 1.5 Pro',
     provider: 'gemini',
-    badge: 'Context 2M - Tư duy sâu',
+    badge: 'Google AI (Context 2M)',
     description: 'Chuyên gia đọc sách, tài liệu nghiên cứu và đối chiếu bảng biểu phức tạp.',
   },
   {
     id: 'gpt-4o',
     name: 'ChatGPT (GPT-4o)',
     provider: 'openai',
-    badge: 'OpenAI Đỉnh cao',
+    badge: 'OpenAI (Cần nạp tiền API)',
     description: 'Tư duy logic mạnh mẽ, hành văn tự nhiên, tóm tắt và phân tích chuyên sâu.',
   },
   {
     id: 'gpt-4o-mini',
     name: 'ChatGPT (GPT-4o Mini)',
     provider: 'openai',
-    badge: 'Tiết kiệm token',
-    description: 'Nhanh, gọn, chi phí thấp cho các tác vụ hỏi đáp thông thường.',
+    badge: 'OpenAI Tiết kiệm',
+    description: 'Nhanh, gọn cho các tác vụ hỏi đáp thông thường.',
   },
 ];

@@ -1,23 +1,26 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Settings, Key, Check, X, ExternalLink, ShieldCheck } from 'lucide-react';
+import { Key, Check, X, ExternalLink, Zap, ShieldCheck } from 'lucide-react';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  groqKey: string;
   geminiKey: string;
   openaiKey: string;
-  onSave: (geminiKey: string, openaiKey: string) => void;
+  onSave: (groqKey: string, geminiKey: string, openaiKey: string) => void;
 }
 
 export default function SettingsModal({
   isOpen,
   onClose,
+  groqKey,
   geminiKey,
   openaiKey,
   onSave,
 }: SettingsModalProps) {
+  const [groqInput, setGroqInput] = useState(groqKey);
   const [geminiInput, setGeminiInput] = useState(geminiKey);
   const [openaiInput, setOpenaiInput] = useState(openaiKey);
   const [saved, setSaved] = useState(false);
@@ -26,7 +29,7 @@ export default function SettingsModal({
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    onSave(geminiInput.trim(), openaiInput.trim());
+    onSave(groqInput.trim(), geminiInput.trim(), openaiInput.trim());
     setSaved(true);
     setTimeout(() => {
       setSaved(false);
@@ -39,7 +42,7 @@ export default function SettingsModal({
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-5">
         <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-3">
           <div className="flex items-center gap-2">
-            <div className="p-2 bg-blue-50 dark:bg-blue-950/50 text-blue-600 rounded-xl">
+            <div className="p-2 bg-orange-50 dark:bg-orange-950/50 text-orange-600 rounded-xl">
               <Key className="w-5 h-5" />
             </div>
             <div>
@@ -47,7 +50,7 @@ export default function SettingsModal({
                 Cài đặt API Keys
               </h2>
               <p className="text-xs text-zinc-500">
-                Key được lưu cục bộ trên trình duyệt máy bạn, không gửi đi đâu khác.
+                Key lưu an toàn trên trình duyệt của bạn, không gửi đi đâu khác.
               </p>
             </div>
           </div>
@@ -60,6 +63,37 @@ export default function SettingsModal({
         </div>
 
         <form onSubmit={handleSave} className="space-y-4">
+          {/* Groq API Key (Khuyên dùng nhất - 100% Free không cần nạp tiền) */}
+          <div className="p-3.5 bg-orange-50/60 dark:bg-orange-950/20 border border-orange-200/80 dark:border-orange-900/50 rounded-xl space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-semibold text-orange-900 dark:text-orange-200 flex items-center gap-1.5">
+                <Zap className="w-4 h-4 text-orange-600" />
+                Groq API Key (Llama 3.3 70B)
+                <span className="text-[10px] px-2 py-0.5 bg-orange-200 dark:bg-orange-900 text-orange-800 dark:text-orange-200 rounded-full font-bold uppercase">
+                  100% Free • Không cần thẻ
+                </span>
+              </label>
+              <a
+                href="https://console.groq.com/keys"
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs text-orange-600 dark:text-orange-400 font-medium hover:underline flex items-center gap-0.5"
+              >
+                Lấy key 10s <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+            <input
+              type="password"
+              placeholder="gsk_..."
+              value={groqInput}
+              onChange={(e) => setGroqInput(e.target.value)}
+              className="w-full px-3.5 py-2 bg-white dark:bg-zinc-800 border border-orange-300 dark:border-orange-800 rounded-lg text-sm font-mono focus:outline-hidden focus:ring-2 focus:ring-orange-500"
+            />
+            <p className="text-[11px] text-zinc-600 dark:text-zinc-400">
+              Chỉ cần đăng nhập bằng Google trên trang Groq là có key ngay, không bắt nạp tiền, đọc file và bảng tính cực nhanh.
+            </p>
+          </div>
+
           {/* Gemini API Key */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
@@ -73,7 +107,7 @@ export default function SettingsModal({
                 rel="noreferrer"
                 className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-0.5"
               >
-                Lấy key miễn phí <ExternalLink className="w-3 h-3" />
+                Google AI Studio <ExternalLink className="w-3 h-3" />
               </a>
             </div>
             <input
@@ -81,11 +115,8 @@ export default function SettingsModal({
               placeholder="AIzaSy..."
               value={geminiInput}
               onChange={(e) => setGeminiInput(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-mono focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3.5 py-2 bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm font-mono focus:outline-hidden focus:ring-2 focus:ring-blue-500"
             />
-            <p className="text-xs text-zinc-500">
-              Khuyên dùng cho xử lý tài liệu PDF dài, bảng Excel lớn và ảnh chụp hóa đơn.
-            </p>
           </div>
 
           {/* OpenAI API Key */}
@@ -101,7 +132,7 @@ export default function SettingsModal({
                 rel="noreferrer"
                 className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-0.5"
               >
-                Lấy key OpenAI <ExternalLink className="w-3 h-3" />
+                OpenAI Platform <ExternalLink className="w-3 h-3" />
               </a>
             </div>
             <input
@@ -109,18 +140,8 @@ export default function SettingsModal({
               placeholder="sk-..."
               value={openaiInput}
               onChange={(e) => setOpenaiInput(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-mono focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+              className="w-full px-3.5 py-2 bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm font-mono focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
             />
-            <p className="text-xs text-zinc-500">
-              Dành cho các mô hình GPT-4o và GPT-4o Mini.
-            </p>
-          </div>
-
-          <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 rounded-xl flex items-start gap-2.5 text-xs text-amber-800 dark:text-amber-300">
-            <ShieldCheck className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
-            <span>
-              Mẹo: Nếu bạn đã cấu hình biến môi trường <code>GEMINI_API_KEY</code> hoặc <code>OPENAI_API_KEY</code> ở file <code>.env.local</code> trên máy chủ, bạn có thể để trống ở đây.
-            </span>
           </div>
 
           <div className="flex items-center justify-end gap-2 pt-2">
@@ -133,7 +154,7 @@ export default function SettingsModal({
             </button>
             <button
               type="submit"
-              className="px-5 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-xs transition flex items-center gap-1.5"
+              className="px-5 py-2 text-sm font-medium bg-orange-600 hover:bg-orange-700 text-white rounded-xl shadow-xs transition flex items-center gap-1.5"
             >
               {saved ? (
                 <>

@@ -64,6 +64,7 @@ export default function Home() {
   const [isOneDriveOpen, setIsOneDriveOpen] = useState(false);
 
   // API keys stored in localStorage
+  const [groqKey, setGroqKey] = useState('');
   const [geminiKey, setGeminiKey] = useState('');
   const [openaiKey, setOpenaiKey] = useState('');
 
@@ -79,9 +80,11 @@ export default function Home() {
 
   // Load API keys and chat sessions from localStorage
   useEffect(() => {
+    const savedGroq = localStorage.getItem('docai_groq_key') || '';
     const savedGemini = localStorage.getItem('docai_gemini_key') || '';
     const savedOpenAI = localStorage.getItem('docai_openai_key') || '';
-    const savedModel = (localStorage.getItem('docai_model') as AIModelId) || 'gemini-2.0-flash';
+    const savedModel = (localStorage.getItem('docai_model') as AIModelId) || 'llama-3.3-70b-versatile';
+    setGroqKey(savedGroq);
     setGeminiKey(savedGemini);
     setOpenaiKey(savedOpenAI);
     if (AVAILABLE_MODELS.some((m) => m.id === savedModel)) {
@@ -192,9 +195,11 @@ export default function Home() {
     }
   };
 
-  const handleSaveKeys = (gKey: string, oKey: string) => {
+  const handleSaveKeys = (gqKey: string, gKey: string, oKey: string) => {
+    setGroqKey(gqKey);
     setGeminiKey(gKey);
     setOpenaiKey(oKey);
+    localStorage.setItem('docai_groq_key', gqKey);
     localStorage.setItem('docai_gemini_key', gKey);
     localStorage.setItem('docai_openai_key', oKey);
   };
@@ -376,6 +381,7 @@ export default function Home() {
         body: JSON.stringify({
           messages: newMessages,
           model: selectedModel,
+          groqApiKey: groqKey || undefined,
           geminiApiKey: geminiKey || undefined,
           openaiApiKey: openaiKey || undefined,
         }),
@@ -682,6 +688,7 @@ export default function Home() {
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
+        groqKey={groqKey}
         geminiKey={geminiKey}
         openaiKey={openaiKey}
         onSave={handleSaveKeys}
