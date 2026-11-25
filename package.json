@@ -13,6 +13,7 @@
     "lucide-react": "^1.80.0",
     "mammoth": "^1.13.0",
     "next": "16.4.6",
+    "next-auth": "^5.0.0-beta.32",
     "openai": "^7.64.0",
     "pdf-parse": "^2.4.5",
     "react": "19.3.0",

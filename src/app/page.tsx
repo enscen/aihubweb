@@ -8,12 +8,7 @@ import {
   Clipboard,
   Send,
   Loader2,
-  FileSpreadsheet,
-  FileText,
   Sparkles,
-  HelpCircle,
-  FileQuestion,
-  CornerDownLeft,
 } from 'lucide-react';
 import { Attachment, ChatMessage, AIModelId, AVAILABLE_MODELS } from '@/lib/types';
 import Header from '@/components/Header';
@@ -21,6 +16,7 @@ import AttachmentList from '@/components/AttachmentList';
 import ChatMessageItem from '@/components/ChatMessageItem';
 import SettingsModal from '@/components/SettingsModal';
 import OneDriveModal from '@/components/OneDriveModal';
+import Sidebar, { ChatSession } from '@/components/Sidebar';
 
 /**
  * Converts tab-delimited Excel clipboard text to a Markdown table
@@ -58,6 +54,11 @@ export default function Home() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
+  // Chat sessions & history
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
   // Modals
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isOneDriveOpen, setIsOneDriveOpen] = useState(false);
@@ -76,7 +77,7 @@ export default function Home() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Load API keys from localStorage
+  // Load API keys and chat sessions from localStorage
   useEffect(() => {
     const savedGemini = localStorage.getItem('docai_gemini_key') || '';
     const savedOpenAI = localStorage.getItem('docai_openai_key') || '';
@@ -86,7 +87,110 @@ export default function Home() {
     if (AVAILABLE_MODELS.some((m) => m.id === savedModel)) {
       setSelectedModel(savedModel);
     }
+
+    try {
+      const rawSessions = localStorage.getItem('docai_sessions');
+      const loadedSessions: ChatSession[] = rawSessions ? JSON.parse(rawSessions) : [];
+      let currentId = localStorage.getItem('docai_active_session');
+
+      if (!currentId || !loadedSessions.some((s) => s.id === currentId)) {
+        currentId = 'session-' + Date.now();
+        const initialSession: ChatSession = {
+          id: currentId,
+          title: 'Đoạn chat mới',
+          timestamp: Date.now(),
+        };
+        loadedSessions.unshift(initialSession);
+        localStorage.setItem('docai_sessions', JSON.stringify(loadedSessions));
+      }
+
+      setSessions(loadedSessions);
+      setActiveSessionId(currentId);
+      localStorage.setItem('docai_active_session', currentId);
+
+      const rawMsgs = localStorage.getItem('docai_msgs_' + currentId);
+      if (rawMsgs) {
+        setMessages(JSON.parse(rawMsgs));
+      }
+    } catch (e) {
+      console.error('Failed to load sessions from storage:', e);
+    }
   }, []);
+
+  // Save active session messages
+  useEffect(() => {
+    if (!activeSessionId) return;
+    try {
+      localStorage.setItem('docai_msgs_' + activeSessionId, JSON.stringify(messages));
+
+      // Auto update session title if still default
+      if (messages.length > 0) {
+        const firstUserMsg = messages.find((m) => m.role === 'user');
+        if (firstUserMsg) {
+          const newTitle = firstUserMsg.content
+            ? firstUserMsg.content.slice(0, 28)
+            : firstUserMsg.attachments?.[0]?.name || 'Tài liệu phân tích';
+
+          setSessions((prev) => {
+            const current = prev.find((s) => s.id === activeSessionId);
+            if (current && current.title === 'Đoạn chat mới') {
+              const updated = prev.map((s) =>
+                s.id === activeSessionId ? { ...s, title: newTitle } : s
+              );
+              localStorage.setItem('docai_sessions', JSON.stringify(updated));
+              return updated;
+            }
+            return prev;
+          });
+        }
+      }
+    } catch (e) {
+      console.error('Failed to save session messages:', e);
+    }
+  }, [messages, activeSessionId]);
+
+  const handleSelectSession = (id: string) => {
+    setActiveSessionId(id);
+    localStorage.setItem('docai_active_session', id);
+    try {
+      const rawMsgs = localStorage.getItem('docai_msgs_' + id);
+      setMessages(rawMsgs ? JSON.parse(rawMsgs) : []);
+    } catch {
+      setMessages([]);
+    }
+    setAttachments([]);
+  };
+
+  const handleNewSession = () => {
+    const newId = 'session-' + Date.now();
+    const newSession: ChatSession = {
+      id: newId,
+      title: 'Đoạn chat mới',
+      timestamp: Date.now(),
+    };
+    const updated = [newSession, ...sessions];
+    setSessions(updated);
+    setActiveSessionId(newId);
+    setMessages([]);
+    setAttachments([]);
+    localStorage.setItem('docai_sessions', JSON.stringify(updated));
+    localStorage.setItem('docai_active_session', newId);
+  };
+
+  const handleDeleteSession = (id: string) => {
+    const updated = sessions.filter((s) => s.id !== id);
+    setSessions(updated);
+    localStorage.setItem('docai_sessions', JSON.stringify(updated));
+    localStorage.removeItem('docai_msgs_' + id);
+
+    if (activeSessionId === id) {
+      if (updated.length > 0) {
+        handleSelectSession(updated[0].id);
+      } else {
+        handleNewSession();
+      }
+    }
+  };
 
   const handleSaveKeys = (gKey: string, oKey: string) => {
     setGeminiKey(gKey);
@@ -107,7 +211,9 @@ export default function Home() {
 
   // Detect OneDrive link inside user text
   useEffect(() => {
-    const match = inputPrompt.match(/https?:\/\/(?:[a-zA-Z0-9-]+\.)?(?:1drv\.ms|sharepoint\.com|live\.com)[^\s]+/i);
+    const match = inputPrompt.match(
+      /https?:\/\/(?:[a-zA-Z0-9-]+\.)?(?:1drv\.ms|sharepoint\.com|live\.com)[^\s]+/i
+    );
     if (match) {
       setDetectedOneDriveUrl(match[0]);
     } else {
@@ -133,7 +239,6 @@ export default function Home() {
 
         const data = await res.json();
         if (data.attachment) {
-          // If image, create local preview URL
           if (file.type.startsWith('image/')) {
             data.attachment.previewUrl = URL.createObjectURL(file);
           }
@@ -158,7 +263,7 @@ export default function Home() {
     const items = e.clipboardData?.items;
     if (!items) return;
 
-    // 1. Check for Image Paste (e.g. Snipping tool screenshot)
+    // 1. Image Paste (Snipping tool screenshot)
     for (let i = 0; i < items.length; i++) {
       if (items[i].type.startsWith('image/')) {
         e.preventDefault();
@@ -185,7 +290,7 @@ export default function Home() {
       }
     }
 
-    // 2. Check for Excel Tabular Paste
+    // 2. Excel Tabular Paste
     const text = e.clipboardData?.getData('text/plain');
     if (text && text.includes('\t') && text.includes('\n')) {
       const markdownTable = convertExcelToMarkdown(text);
@@ -205,12 +310,10 @@ export default function Home() {
     }
   };
 
-  // Remove an attachment
   const handleRemoveAttachment = (id: string) => {
     setAttachments((prev) => prev.filter((a) => a.id !== id));
   };
 
-  // Convert detected OneDrive URL automatically
   const handleFetchDetectedOneDrive = async () => {
     if (!detectedOneDriveUrl) return;
     setIsUploading(true);
@@ -223,7 +326,6 @@ export default function Home() {
       const data = await res.json();
       if (data.attachment) {
         setAttachments((prev) => [...prev, data.attachment]);
-        // Remove url from text
         setInputPrompt((prev) => prev.replace(detectedOneDriveUrl, '').trim());
         setDetectedOneDriveUrl(null);
       } else {
@@ -236,7 +338,6 @@ export default function Home() {
     }
   };
 
-  // Send message
   const handleSend = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (isStreaming) return;
@@ -316,7 +417,7 @@ export default function Home() {
           m.id === assistantMsgId
             ? {
                 ...m,
-                content: `⚠️ **Lỗi:** ${(err as Error).message}\n\n*Nếu bạn chưa cài đặt API Key, hãy bấm vào nút **Cài đặt API** ở góc trên bên phải để nhập Key.*`,
+                content: `⚠️ **Lỗi:** ${(err as Error).message}\n\n*Nếu bạn chưa cài đặt API Key, hãy bấm vào nút **Cài đặt** ở góc trên để nhập Key miễn phí.*`,
               }
             : m
         )
@@ -326,7 +427,6 @@ export default function Home() {
     }
   };
 
-  // Keyboard shortcut: Enter to send, Shift+Enter for new line
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -353,12 +453,24 @@ export default function Home() {
         }
       }}
     >
+      {/* Sidebar for Chat Sessions */}
+      <Sidebar
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+        sessions={sessions}
+        activeSessionId={activeSessionId}
+        onSelectSession={handleSelectSession}
+        onNewSession={handleNewSession}
+        onDeleteSession={handleDeleteSession}
+      />
+
       {/* Header */}
       <Header
         selectedModel={selectedModel}
         onSelectModel={handleModelChange}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onClearChat={() => setMessages([])}
+        onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
         hasMessages={messages.length > 0}
       />
 
@@ -371,10 +483,10 @@ export default function Home() {
                 <Sparkles className="w-8 h-8" />
               </div>
               <h2 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">
-                Bạn cần xử lý tài liệu gì hôm nay?
+                Trợ lý DocAI Agent đã sẵn sàng
               </h2>
               <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                Tải lên tài liệu, dán link OneDrive hoặc bấm <b>Ctrl + V</b> để dán trực tiếp bảng Excel/ảnh chụp màn hình.
+                Tải lên tài liệu, dán link OneDrive hoặc bấm <b>Ctrl + V</b> để dán trực tiếp bảng Excel/ảnh chụp màn hình. Hỗ trợ tự động xuất báo cáo Excel & Word chỉ với 1 cú click!
               </p>
             </div>
 
@@ -546,7 +658,11 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={() => handleSend()}
-                  disabled={isStreaming || isUploading || (!inputPrompt.trim() && attachments.length === 0)}
+                  disabled={
+                    isStreaming ||
+                    isUploading ||
+                    (!inputPrompt.trim() && attachments.length === 0)
+                  }
                   className="p-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:hover:bg-blue-600 text-white rounded-xl shadow-xs transition flex items-center justify-center cursor-pointer disabled:cursor-not-allowed"
                   title="Gửi câu hỏi (Enter)"
                 >
